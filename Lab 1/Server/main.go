@@ -105,10 +105,14 @@ func handle_message(client * ChatClient, message []byte) {
   message_type := get_message_type(message)
   switch message_type {
     case "JOIN":
-
+      break
     case "LEAVE":
-
+      break
     case "MESSAGE":
+      break
+    default:
+      client.conn.Write([]byte("Error Unknown Request!"))
+      client.conn.Close()
   }
 }
 
@@ -116,6 +120,7 @@ func handle_connection(conn net.Conn) {
   rand_id := get_random_id()
   client := &ChatClient{
     id: rand_id,
+    conn: conn,
   }
 
   connected := true
@@ -131,7 +136,10 @@ func handle_connection(conn net.Conn) {
       } else {
         _, ok := err.(net.Error) // Declaring is type net.Error
         if ok {
-          fmt.Println("Network error occured, client probably disconnected")
+          fmt.Println("Network error occured, client probably disconnected\n" +
+                      "Connection Closed")
+          connected = false
+          conn.Close()
         } else {
           fmt.Println("Unknown error occured")
           panic(err)
