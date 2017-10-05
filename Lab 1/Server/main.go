@@ -1,8 +1,12 @@
 package main
 
+import "net"
+import "fmt"
 import "time"
+import "strconv"
 
 const package_size = 1024;
+const port = 8888
 
 var rooms map[string]*ChatRoom
 
@@ -47,10 +51,26 @@ func handle_message() {
 
 }
 
-func handle_connection() {
+func handle_connection(conn net.Conn) {
 
 }
 
 func main() {
+  port_str := ":" + strconv.Itoa(port)
+  ln, err := net.Listen("tcp", port_str)
 
+  if err != nil {
+    fmt.Println("Failed to listen on port %d", port)
+    panic(err)
+  }
+
+  for {
+    conn, err := ln.Accept()
+
+    if err != nil {
+      fmt.Println("Failed to accept client connection")
+    } else {
+      go handle_connection(conn)
+    }
+  }
 }
