@@ -25,12 +25,13 @@ type ActivityLog struct {
 
 type ChatRoom struct {
   id string
-  clients []ChatClient
+  clients map[string]*ChatClient
 }
 
 type ChatClient struct {
   id string
   room *ChatRoom // Unsure if multiple rooms supported assuming 1 for now
+  conn net.Conn
 }
 
 func get_random_id() string {
@@ -61,13 +62,54 @@ func log(log_type, content string, client * ChatClient) {
   logs = append(logs, entry)
 }
 
-func (this * ChatClient) join_room() {
+func create_room() *ChatRoom {
+  id := get_random_id()
 
+  return &ChatRoom{
+    id: id,
+    clients: make(map[string]*ChatClient),
+  }
+}
+
+func (this * ChatRoom) join(client * ChatClient) {
+  this.clients[client.id] = client
+}
+
+func (this * ChatClient) join(room string) {
+  this.room = rooms[room]
+  rooms[room].join(this)
+}
+
+func (this * ChatRoom) leave(client * ChatClient) {
+  delete(this.clients, client.id)
+}
+
+func (this * ChatClient) leave() {
+  this.room.leave(this)
+  this.room = nil
+}
+
+func (this * ChatRoom) send_message(message, sender string) {
+  for _, client := range this.clients {
+    client.conn.Write([]byte(message))
+  }
+}
+
+func get_message_type(message []byte) string {
+  return ""
 }
 
 func handle_message(client * ChatClient, message []byte) {
   log("client_message", string(message), client)
   fmt.Printf("Read %d bytes, msg: %s\n", len(message), string(message))
+  message_type := get_message_type(message)
+  switch message_type {
+    case "JOIN":
+
+    case "LEAVE":
+
+    case "MESSAGE":
+  }
 }
 
 func handle_connection(conn net.Conn) {
