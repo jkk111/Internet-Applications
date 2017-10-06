@@ -1,5 +1,6 @@
 package main
 
+import "os"
 import "io"
 import "net"
 import "fmt"
@@ -15,6 +16,14 @@ const random_id_bytes = 8
 var rooms map[string]*ChatRoom
 
 var logs []*ActivityLog = make([]*ActivityLog, 0) // Define empty string array
+
+var ctrl_sequence = map[string]string {
+  "client_hello": "HELO",
+  "client_message": "MESS",
+  "client_disco": "DISCO",
+  "client_join": "JOIN",
+  "client_kill": "KILL",
+}
 
 type ActivityLog struct {
   log_type string
@@ -71,6 +80,12 @@ func create_room() *ChatRoom {
   }
 }
 
+func (this * ChatClient) Send(m_type, message string) {
+  temp := m_type + " " + message
+
+  this.conn.Write([]byte(temp))
+}
+
 func (this * ChatRoom) join(client * ChatClient) {
   this.clients[client.id] = client
 }
@@ -96,7 +111,16 @@ func (this * ChatRoom) send_message(message, sender string) {
 }
 
 func get_message_type(message []byte) string {
-  return ""
+  // Strategy here is to read until the first space, buffer is limited to 1024
+  // bytes so not too bad!
+
+  for i := 0; i < len(message); i++ {
+    if message[i] == ' ' {
+      return string(message[:i])
+    }
+  }
+
+  return string(message)
 }
 
 func handle_message(client * ChatClient, message []byte) {
@@ -104,47 +128,58 @@ func handle_message(client * ChatClient, message []byte) {
   fmt.Printf("Read %d bytes, msg: %s\n", len(message), string(message))
   message_type := get_message_type(message)
   switch message_type {
-    case "JOIN":
+    case ctrl_sequence["client_hello"]:
+
+      // Identify the client
+
+      client.Send("IDENT", client.id)
+
       break
-    case "LEAVE":
+    case ctrl_sequence["client_disco"]:
       break
-    case "MESSAGE":
+    case ctrl_sequence["client_message"]:
       break
+    case ctrl_sequence["client_kill"]:
+      os.Exit(0)
     default:
       client.conn.Write([]byte("Error Unknown Request!"))
       client.conn.Close()
   }
 }
 
+func handle_conn_err(err error) {
+  fmt.Printf("%T %+v\n", err, err)
+  if err == io.EOF {
+    fmt.Println("Connection went away")
+  } else if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
+    fmt.Println("Connection Timeout")
+  } else if operr, ok := err.(*net.OpError); ok {
+    if operr.Op == "dial" {
+      fmt.Println("Couldn't reach host")
+    } else if operr.Op == "read" {
+      fmt.Println("Can't write to closed connection")
+    }
+  }
+}
+
 func handle_connection(conn net.Conn) {
   rand_id := get_random_id()
+
   client := &ChatClient{
     id: rand_id,
     conn: conn,
   }
 
   connected := true
+
   for connected {
     buf := make([]byte, message_size)
     n, err := conn.Read(buf)
     buf = buf[:n]
     if err != nil {
       log("error", err.Error(), client)
-      if err == io.EOF {
-        fmt.Println("Connection went away")
-        connected = false
-      } else {
-        _, ok := err.(net.Error) // Declaring is type net.Error
-        if ok {
-          fmt.Println("Network error occured, client probably disconnected\n" +
-                      "Connection Closed")
-          connected = false
-          conn.Close()
-        } else {
-          fmt.Println("Unknown error occured")
-          panic(err)
-        }
-      }
+      handle_conn_err(err)
+      connected = false
     } else {
       handle_message(client, buf)
     }

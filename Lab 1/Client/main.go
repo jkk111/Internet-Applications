@@ -2,6 +2,7 @@ package main
 
 import "fmt"
 import "net"
+import "time"
 import "strconv"
 
 const port = 8888
@@ -11,13 +12,17 @@ func main() {
   conn, err := net.Dial("tcp",tcp_location)
 
   if err != nil {
-    fmt.Println("Failed to connect to the server at %s", tcp_location)
+    fmt.Printf("Failed to connect to the server at %s\n", tcp_location)
     panic(err)
   }
 
   defer conn.Close()
 
-  conn.Write([]byte("Hello world"))
+  conn.Write([]byte("HELO"))
+
+  time.Sleep(time.Second)
+
+  conn.Write([]byte("KILL"))
 
   resp := make([]byte, 1024)
 
