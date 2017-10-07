@@ -21,6 +21,12 @@ func handle_message(conn * common.Connection, message * util.Message) {
       resp := util.Create_Message("TESTING", "")
       conn.Write(resp)
       break
+
+    case "KILL":
+      ln := conn.Listener()
+      ln.Close()
+      break
+
     default:
       m := util.Create_Message("REJECT", "")
       conn.Write(m)
@@ -39,6 +45,6 @@ func conn_handler(conn * common.Connection) {
 }
 
 func main() {
-  fmt.Println(rooms.Rooms())
+  _ = rooms.Rooms // Silences error regarding unused package
   common.Create_Server(port, conn_handler)
 }

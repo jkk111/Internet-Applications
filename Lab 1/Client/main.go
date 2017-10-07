@@ -66,23 +66,27 @@ func main() {
   for test_index, conversation := range conversations {
     res_index := 0
     conn := common.Connect(tcp_location)
-    defer conn.Close()
+    if conn != nil {
+      defer conn.Close()
 
-    for _, message := range conversation {
-      if message.outbound {
-        conn.Write(message.message)
-      } else {
-        m := conn.Receive()
-
-        if !m.Equals(message.message) {
-          fmt.Printf("%s != %s\n", message.message, m)
-          panic("Assertion Error!")
+      for _, message := range conversation {
+        if message.outbound {
+          conn.Write(message.message)
         } else {
-          fmt.Printf("(%d:%d) Message matches expected response\n", test_index,
-                                                                    res_index)
-          res_index++
+          m := conn.Receive()
+
+          if !m.Equals(message.message) {
+            fmt.Printf("%s != %s\n", message.message, m)
+            panic("Assertion Error!")
+          } else {
+            fmt.Printf("(%d:%d) Message matches expected response\n", test_index,
+                                                                      res_index)
+            res_index++
+          }
         }
       }
+    } else {
+      fmt.Println("Failed to connect to the remote server")
     }
   }
 }

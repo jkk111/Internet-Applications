@@ -12,15 +12,27 @@ type Connection struct {
   connected bool
   id string
   read uint64
-  listener *net.Listener
+  listener *Server
+}
+
+type Server struct {
+  listener net.Listener
+  connected bool
 }
 
 const packet_size = 1024
 
 func Create_Server(port string, conn_handler func(*Connection)) {
   ln, err := net.Listen("tcp", port)
+  defer ln.Close()
+
+  server := &Server {
+    listener: ln,
+    connected: true,
+  }
+
   if err == nil {
-    for {
+    for server.connected {
       conn, err := ln.Accept()
 
       id := util.Get_Random_Id()
@@ -29,7 +41,7 @@ func Create_Server(port string, conn_handler func(*Connection)) {
           conn: conn,
           connected: true,
           id: id,
-          listener: &ln,
+          listener: server,
         }
 
         go conn_handler(connection)
@@ -40,7 +52,6 @@ func Create_Server(port string, conn_handler func(*Connection)) {
 
 // Deals with a connection error
 func handle_conn_err(err error) {
-  fmt.Printf("%T %+v\n", err, err)
   if err == io.EOF {
     fmt.Println("Connection went away")
   } else if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
@@ -54,6 +65,11 @@ func handle_conn_err(err error) {
       fmt.Printf("Failed to perform op: '%s'\n", operr.Op)
     }
   }
+}
+
+func (this * Server) Close() {
+  this.connected = false
+  this.listener.Close()
 }
 
 func (this * Connection) Connected() bool {
@@ -72,7 +88,7 @@ func (this * Connection) Write(m * util.Message) {
   this.conn.Write(m.Serialize())
 }
 
-func (this * Connection) Listener() * net.Listener {
+func (this * Connection) Listener() * Server {
   return this.listener
 }
 
