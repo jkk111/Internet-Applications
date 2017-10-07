@@ -23,12 +23,26 @@ func (this * Message) Body() string {
 }
 
 func (this * Message) String() string {
-  return this.Type() + " " + this.Body()
+  str := this.message_type
+  if this.message_body != "" {
+    str += " " + this.message_body
+  }
+  return str
+}
+
+func (this * Message) Equals(other * Message) bool {
+  return (this.Type() == "IDENT" && other.Type() == "IDENT" ||
+           (this.Type() == other.Type() &&
+             this.Body() == other.Body()))
 }
 
 func (this * Message) Serialize() []byte {
   if this.m_cache == nil {
-    this.m_cache = []byte(this.Type() + " " + this.Body())
+    str := this.Type()
+    if this.message_body != "" {
+      str = str + " " + this.message_body
+    }
+    this.m_cache = []byte(str)
   }
   return this.m_cache
 }
@@ -51,6 +65,19 @@ func Create_Message(message_type, body string) * Message {
   return &Message{
     message_type: message_type,
     message_body: body,
+  }
+}
+
+func Create_Message_From_String(message string) * Message {
+  m_type := get_message_type([]byte(message))
+  slice := len(m_type) + 1
+  if slice > len(m_type) {
+    slice = len(m_type)
+  }
+
+  return &Message {
+    message_type: message[:slice],
+    message_body: message[slice:],
   }
 }
 

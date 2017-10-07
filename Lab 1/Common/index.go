@@ -60,6 +60,14 @@ func (this * Connection) Connected() bool {
   return this.connected
 }
 
+func (this * Connection) Close() {
+  this.conn.Close()
+}
+
+func (this * Connection) Id() string {
+  return this.id
+}
+
 func (this * Connection) Write(m * util.Message) {
   this.conn.Write(m.Serialize())
 }
