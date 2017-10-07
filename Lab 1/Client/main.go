@@ -18,7 +18,7 @@ func main() {
 
   defer conn.Close()
 
-  conn.Write([]byte("HELO"))
+  conn.Write([]byte("HELO IAMHERE"))
 
   time.Sleep(time.Second)
 
