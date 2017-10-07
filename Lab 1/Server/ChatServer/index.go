@@ -16,6 +16,11 @@ func handle_message(conn * common.Connection, message * util.Message) {
       resp := util.Create_Message("IDENT", conn.Id())
       conn.Write(resp)
       break
+
+    case "TESTING":
+      resp := util.Create_Message("TESTING", "")
+      conn.Write(resp)
+      break
     default:
       m := util.Create_Message("REJECT", "")
       conn.Write(m)

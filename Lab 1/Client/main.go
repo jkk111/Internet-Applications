@@ -64,10 +64,11 @@ func main() {
   tcp_location := "127.0.0.1:" + strconv.Itoa(port)
   conversations := read_conversations()
   for test_index, conversation := range conversations {
+    res_index := 0
     conn := common.Connect(tcp_location)
     defer conn.Close()
 
-    for m_index, message := range conversation {
+    for _, message := range conversation {
       if message.outbound {
         conn.Write(message.message)
       } else {
@@ -77,10 +78,10 @@ func main() {
           fmt.Printf("%s != %s\n", message.message, m)
           panic("Assertion Error!")
         } else {
-          fmt.Printf("(%d:%d)Message matches expected response\n", test_index,
-                                                                    m_index)
+          fmt.Printf("(%d:%d) Message matches expected response\n", test_index,
+                                                                    res_index)
+          res_index++
         }
-
       }
     }
   }
