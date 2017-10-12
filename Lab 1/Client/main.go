@@ -8,7 +8,6 @@ import "os"
 import "fmt"
 import "bufio"
 import "strings"
-import "strconv"
 import "../Common"
 import "../Common/util"
 
@@ -61,7 +60,7 @@ func read_conversations() [][]*ClientMessage {
 }
 
 func main() {
-  tcp_location := "127.0.0.1:" + strconv.Itoa(port)
+  tcp_location := fmt.Sprintf("127.0.0.1:%d", port)
   conversations := read_conversations()
   for test_index, conversation := range conversations {
     res_index := 0
@@ -79,8 +78,8 @@ func main() {
             fmt.Printf("%s != %s\n", message.message, m)
             panic("Assertion Error!")
           } else {
-            fmt.Printf("(%d:%d) Message matches expected response\n", test_index,
-                                                                      res_index)
+            fmt.Printf("(%d:%d) Success: Valid Response\n", test_index,
+                                                            res_index)
             res_index++
           }
         }

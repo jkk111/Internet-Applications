@@ -20,7 +20,7 @@ type Server struct {
   connected bool
 }
 
-const packet_size = 1024
+const packet_size = 65535 // Max size, just in case, real world < 1500 bytes
 
 func Create_Server(port string, conn_handler func(*Connection)) {
   ln, err := net.Listen("tcp", port)
@@ -85,6 +85,7 @@ func (this * Connection) Id() string {
 }
 
 func (this * Connection) Write(m * util.Message) {
+  fmt.Printf("Attempting to write message %s\n", m.Serialize())
   this.conn.Write(m.Serialize())
 }
 
@@ -93,8 +94,6 @@ func (this * Connection) Listener() * Server {
 }
 
 func (this * Connection) Receive() * util.Message {
-  // TODO (jkk111): Currently can't handle long message,
-  // Awaiting spec to see if needed.
   buf := make([]byte, packet_size)
   read, err := this.conn.Read(buf)
 

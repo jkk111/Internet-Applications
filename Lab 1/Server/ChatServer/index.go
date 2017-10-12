@@ -7,44 +7,53 @@ import (
   "fmt"
 )
 
-var port = ":8888"
+const port = ":8888"
+const sid = "14319833"
 
-func handle_message(conn * common.Connection, message * util.Message) {
+func handle_message(conn * rooms.ChatClient, message * util.Message) {
   fmt.Printf("Recevied Message %s\n", message)
   switch message.Type() {
     case "HELO":
-      resp := util.Create_Message("IDENT", conn.Id())
+
+      response := []*util.MessageComponent {
+        util.Message_Component("HELO", message.Body()["HELO"]),
+        util.Message_Component("IP:", "0"),
+        util.Message_Component("PORT:", "0"),
+        util.Message_Component("StudentID", sid),
+      }
+
+      resp := util.Create_Message(response)
       conn.Write(resp)
       break
 
-    case "TESTING":
-      resp := util.Create_Message("TESTING", "")
-      conn.Write(resp)
-      break
-
-    case "KILL":
+    case "KILL_SERVICE":
       ln := conn.Listener()
       ln.Close()
       break
 
+    case "JOIN_CHATROOM:":
+      conn.Join(message.Body())
+      break
+
+    case "CHAT:"
+      conn.Chat(message.Body())
+      break
+
     default:
-      m := util.Create_Message("REJECT", "")
-      conn.Write(m)
       conn.Close()
   }
 }
 
 func conn_handler(conn * common.Connection) {
-  for conn.Connected() {
-    message := conn.Receive()
+  client := &rooms.ChatClient{conn, nil}
+  for client.Connected() {
+    message := client.Receive()
     if message != nil {
-      // Do something here
-      handle_message(conn, message)
+      handle_message(client, message)
     }
   }
 }
 
 func main() {
-  _ = rooms.Rooms // Silences error regarding unused package
   common.Create_Server(port, conn_handler)
 }

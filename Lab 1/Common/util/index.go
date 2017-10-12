@@ -9,62 +9,180 @@ import (
 const random_id_bytes = 8
 
 type Message struct {
+  components map[string]string
   message_type string
   message_body string
   m_cache []byte // Kind of expensive to convert to byte array, so cache result
 } // Represents a message Object
 
+type MessageComponent struct {
+  component_type string
+  data string
+  len int
+}
+
+func Message_Component(c_type, data string) *MessageComponent {
+  return &MessageComponent{
+    component_type: c_type,
+    data: data,
+  }
+}
+
 func (this * Message) Type() string {
   return this.message_type
 }
 
-func (this * Message) Body() string {
-  return this.message_body
+func (this * Message) Body() map[string]string {
+  return this.components
 }
 
 func (this * Message) String() string {
-  str := this.message_type
-  if this.message_body != "" {
-    str += " " + this.message_body
+  str := ""
+  for key, comp := range this.components {
+    str += key + " " + comp + "\n"
+    if key == "MESSAGE:" {
+      str += "\n"
+    }
   }
   return str
 }
 
 func (this * Message) Equals(other * Message) bool {
-  return (this.Type() == "IDENT" && other.Type() == "IDENT" ||
-           (this.Type() == other.Type() &&
-             this.Body() == other.Body()))
+  if this.Type() != other.Type() {
+    return false
+  }
+
+  for key, entry := range this.components {
+    if entry != other.components[key] {
+      return false
+    }
+  }
+
+  for key, entry := range other.components {
+    if entry != this.components[key] {
+      return false
+    }
+  }
+
+  return true
 }
 
 func (this * Message) Serialize() []byte {
   if this.m_cache == nil {
-    str := this.Type()
     if this.message_body != "" {
-      str = str + " " + this.message_body
+      this.m_cache = []byte(this.message_body)
+    } else {
+      str := ""
+
+      fmt.Println(this.components)
+
+      for key, c := range this.components {
+        str += key + " " + c + "\n"
+        if key == "MESSAGE:" {
+          str += "\n"
+        }
+      }
+
+      fmt.Println("Serialized", len(str))
+
+      this.m_cache = []byte(str)
     }
-    this.m_cache = []byte(str)
   }
   return this.m_cache
 }
 
+func found(message []byte, index int, pattern []byte) bool {
+  for i, c := range pattern {
+    if message[i + index] != c {
+      return false
+    }
+  }
+
+  return true
+}
+
+func parse_component_data(message []byte, terminator string) string {
+  term_bytes := []byte(terminator)
+  i := 0
+  for ; i < len(message); i++ {
+    if found(message, i, term_bytes) {
+      break
+    }
+  }
+
+  return string(message[:i])
+}
+
+func parse_component(message []byte) *MessageComponent {
+  m_type := get_message_type(message)
+  len_type := len(m_type) + 1
+
+  term := "\n"
+  if m_type == "MESSAGE:" {
+    term = "\n\n"
+  }
+
+  if len_type > len(message) {
+    return nil
+  }
+
+  component := parse_component_data(message[len_type:], term)
+
+  return &MessageComponent{
+    m_type,
+    component,
+    len_type + len(component) + len(term),
+  }
+}
+
 // Returns a parsed message.
 func Parse_Message(message []byte) * Message {
-  m_type := get_message_type(message)
-  slice := len(m_type) + 1
-  if slice > len(message) {
-    slice = len(message)
+  components := make([]*MessageComponent, 0)
+
+  first := parse_component(message)
+  components = append(components, first)
+  fmt.Println(first, message, first.len)
+  if first.len < len(message) {
+    message = message[first.len:]
+  } else {
+    message = make([]byte, 0)
   }
+
+  for len(message) > 0 {
+    component := parse_component(message)
+    if component != nil {
+      components = append(components, component)
+      message = message[component.len:]
+    } else {
+      break
+    }
+  }
+
+  mapped_components := make(map[string]string)
+
+  for _, component := range components {
+    mapped_components[component.component_type] = component.data
+  }
+
   return &Message{
-    message_type: m_type,
-    message_body: string(message[slice:]),
+    components: mapped_components,
+    message_type: first.component_type,
     m_cache: message,
   }
 }
 
-func Create_Message(message_type, body string) * Message {
+func Create_Message(data []*MessageComponent) * Message {
+  content := ""
+
+  for _, item := range data {
+    content += item.component_type + " " + item.data + "\n"
+    if item.component_type == "MESSAGE:" {
+      content += "\n"
+    }
+  }
+
   return &Message{
-    message_type: message_type,
-    message_body: body,
+    message_body: content,
   }
 }
 
