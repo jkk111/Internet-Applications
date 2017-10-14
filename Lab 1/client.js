@@ -1,5 +1,5 @@
 let net = require('net')
-let messages = require(__dirname + '/Sample.js')
+let clients = require(__dirname + '/Sample.js')
 
 let data = {};
 
@@ -51,20 +51,24 @@ let parse_message = (d) => {
 let Receive = socket => {
   return new Promise((resolve) => {
     socket.once('data', (d) => {
-      resolve(d.toString())
+      let msg = d.toString()
+      console.log("MESG", msg)
+      resolve(msg)
     })
   })
 }
 
-let socket = net.connect(8888, 'localhost', async() => {
-  for(var message of messages) {
-    if(message === 'AWAIT') {
-      let resp = await Receive(socket);
-      let message = parse_message(resp)
-      console.log(message)
-      data = Object.assign(data, message)
-    } else {
-      socket.write(set_vars(message))
+for(var messages of clients) {
+  let socket = net.connect(8888, 'localhost', async() => {
+    for(var message of messages) {
+      if(message === 'AWAIT') {
+        let resp = await Receive(socket);
+        let message = parse_message(resp)
+        console.log(message)
+        data = Object.assign(data, message)
+      } else {
+        socket.write(set_vars(message))
+      }
     }
-  }
-})
+  })
+}

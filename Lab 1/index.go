@@ -9,10 +9,12 @@ import (
   "strconv"
 )
 
-const packet_size = 1024
+const packet_size = 8192
 
 var client_ids = Create_Counter()
 var room_ids = Create_Counter()
+
+var connected_clients = make(map[int]*Connection)
 
 var rooms = make(map[int]*Room)
 var rooms_mapped = make(map[string]*Room)
@@ -65,6 +67,21 @@ type Room struct {
 
 func (this * Room) Join(conn * Connection) {
   this.clients[conn.id] = conn
+}
+
+func leave_message(room * Room, client string) * Message {
+  message := fmt.Sprintf("%s has left this chatroom.\n\n", client)
+
+  return Construct_Message([]*MessageComponent {
+    Message_Component("CHAT:", fmt.Sprintf("%d", room.id)),
+    Message_Component("CLIENT_NAME:", client),
+    Message_Component("MESSAGE:", message),
+  })
+}
+
+func (this * Room) Leave(conn * Connection, name string) {
+  delete(this.clients, conn.id)
+  this.Send(leave_message(this, name))
 }
 
 func (this * Room) Send(message * Message) {
@@ -163,7 +180,6 @@ func parse_component(message []byte) * MessageComponent {
   len_type := len(m_type) + 1
 
   term := "\n"
-  fmt.Println("TYPE:", m_type, m_type == "MESSAGE:")
   if m_type == "MESSAGE:" {
     term = "\n\n"
   }
@@ -181,7 +197,6 @@ func parse_component(message []byte) * MessageComponent {
 }
 
 func Parse_Message(message []byte) * Message {
-  fmt.Println("M_BYTES", message)
   components := make([]*MessageComponent, 0)
 
   first := parse_component(message)
@@ -221,6 +236,7 @@ func Parse_Message(message []byte) * Message {
 
 type Connection struct {
   id int
+  name string // Last known name for client
   conn net.Conn
   connected bool
   rooms map[int]*Room
@@ -251,12 +267,20 @@ func (this * Connection) Send(message * Message) {
   this.conn.Write(message.Serialize())
 }
 
+func (this * Connection) Close() {
+  for _, room := range this.rooms {
+    room.Leave(this, this.name)
+  }
+  this.conn.Close()
+}
+
 func (this * Connection) Receive() * Message {
   buf := make([]byte, packet_size)
   read, err := this.conn.Read(buf)
 
   if err != nil {
     this.connected = false
+    delete(connected_clients, this.id)
     handle_conn_err(err)
     return nil
   } else {
@@ -302,15 +326,29 @@ func chat_message(conn * Connection, message * Message) {
     Message_Component("MESSAGE:", mapped["MESSAGE:"]),
   })
 
-  for key, _ := range mapped {
-    fmt.Println(key)
-  }
-
   room := conn.rooms[room_id]
   room.Send(msg)
 }
 
+func leave_chatroom(conn * Connection, message * Message) * Message {
+  mapped := message.mapped_components
+  room_id, _ := strconv.Atoi(mapped["LEAVE_CHATROOM:"])
+  name := mapped["CLIENT_NAME:"]
+
+  conn.rooms[room_id].Leave(conn, name)
+  delete(conn.rooms, room_id)
+
+  return Construct_Message([]*MessageComponent {
+    Message_Component("LEFT_CHATROOM:", mapped["LEAVE_CHATROOM:"]),
+    Message_Component("JOIN_ID:", mapped["JOIN_ID:"]),
+  })
+}
+
 func handle_message(conn * Connection, message * Message) {
+  if message.mapped_components["CLIENT_NAME:"] != "" {
+    conn.name = message.mapped_components["CLIENT_NAME:"]
+  }
+
   switch message.Type() {
     case "HELO":
       conn.Send(client_hello(message))
@@ -322,7 +360,16 @@ func handle_message(conn * Connection, message * Message) {
       chat_message(conn, message)
       break
     case "KILL_SERVICE":
+      for _, client := range connected_clients {
+        client.Close()
+      }
       os.Exit(0)
+      break
+    case "DISCONNECT:":
+      conn.Close()
+      break
+    case "LEAVE_CHATROOM:":
+      conn.Send(leave_chatroom(conn, message))
       break
   }
 }
@@ -339,10 +386,13 @@ func handle_conn(conn * Connection) {
 func on_connect(c net.Conn) {
   conn := &Connection{
     client_ids.Next(),
+    "",
     c,
     true,
     make(map[int]*Room),
   }
+
+  connected_clients[conn.id] = conn
 
   handle_conn(conn)
 }
