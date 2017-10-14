@@ -1,14 +1,15 @@
 let net = require('net');
+let colors = require('colors')
 
 if(process.argv.length < 4) {
-  console.error("Usage node idle_client.js {room} {port}")
+  console.error("Usage node idle_client.js {room} {port}".red)
   process.exit(1);
 }
 
 let room = process.argv[2];
 let port = process.argv[3];
 
-console.info("Attempting to join room: %s on port %d", room, port);
+console.info("Attempting to join room: %s on port %d".yellow, room, port);
 
 let hello = () => {
   return 'HELO listener\n'
@@ -55,11 +56,18 @@ let log_message = (d) => {
   let message = parse_message(d);
 
   if(message["MESSAGE:"]) {
-    console.log(message['CLIENT_NAME:'] + ":", message["MESSAGE:"])
+    let date = new Date() + "";
+    date = date.yellow;
+    console.log(date)
+    let m = (message['CLIENT_NAME:'] + ":").green
+    m += " " + message["MESSAGE:"]
+    console.log(m)
+    console.log()
   }
 }
 
 let socket = net.connect(port, 'localhost', () => {
+  console.info("Connected to port: %d\n".yellow, port)
   socket.write(hello())
   socket.write(join(room))
 

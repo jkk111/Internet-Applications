@@ -58,17 +58,23 @@ let Receive = socket => {
   })
 }
 
-for(var messages of clients) {
-  let socket = net.connect(8888, 'localhost', async() => {
-    for(var message of messages) {
-      if(message === 'AWAIT') {
-        let resp = await Receive(socket);
-        let message = parse_message(resp)
-        console.log(message)
-        data = Object.assign(data, message)
-      } else {
-        socket.write(set_vars(message))
-      }
-    }
-  })
+let run = async() => {
+  for(var messages of clients) {
+    ((messages) => {
+      let socket = net.connect(8888, 'localhost', async() => {
+        for(var message of messages) {
+          if(message === 'AWAIT') {
+            let resp = await Receive(socket);
+            let message = parse_message(resp)
+            console.log(message)
+            data = Object.assign(data, message)
+          } else {
+            socket.write(set_vars(message))
+          }
+        }
+      })
+    })(messages)
+  }
 }
+
+run()

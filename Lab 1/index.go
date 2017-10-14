@@ -6,6 +6,7 @@ import (
   "os"
   "io"
   "sync"
+  "time"
   "strconv"
 )
 
@@ -15,6 +16,8 @@ var client_ids = Create_Counter()
 var room_ids = Create_Counter()
 
 var connected_clients = make(map[int]*Connection)
+var connected_clients_mutex = sync.Mutex{}
+
 
 var rooms = make(map[int]*Room)
 var rooms_mapped = make(map[string]*Room)
@@ -213,8 +216,12 @@ func Parse_Message(message []byte) * Message {
 
   for len(message) > 0 {
     component := parse_component(message)
+
     if component != nil {
       components = append(components, component)
+      if component.len() >= len(message) {
+        break
+      }
       message = message[component.len():]
     } else {
       break
@@ -268,10 +275,15 @@ func (this * Connection) Send(message * Message) {
 }
 
 func (this * Connection) Close() {
+  fmt.Println("Closing connection with", this.id)
   for _, room := range this.rooms {
     room.Leave(this, this.name)
   }
+  this.connected = false
   this.conn.Close()
+  connected_clients_mutex.Lock()
+  delete(connected_clients, this.id)
+  connected_clients_mutex.Unlock()
 }
 
 func (this * Connection) Receive() * Message {
@@ -279,8 +291,7 @@ func (this * Connection) Receive() * Message {
   read, err := this.conn.Read(buf)
 
   if err != nil {
-    this.connected = false
-    delete(connected_clients, this.id)
+    this.conn.Close()
     handle_conn_err(err)
     return nil
   } else {
@@ -363,6 +374,12 @@ func handle_message(conn * Connection, message * Message) {
       for _, client := range connected_clients {
         client.Close()
       }
+
+      // Wait for connections to close gracefully
+      for len(connected_clients) > 0 {
+        time.Sleep(time.Millisecond)
+      }
+
       os.Exit(0)
       break
     case "DISCONNECT:":
@@ -391,9 +408,9 @@ func on_connect(c net.Conn) {
     true,
     make(map[int]*Room),
   }
-
+  connected_clients_mutex.Lock()
   connected_clients[conn.id] = conn
-
+  connected_clients_mutex.Unlock()
   handle_conn(conn)
 }
 
