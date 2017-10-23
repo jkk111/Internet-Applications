@@ -15,6 +15,11 @@ const packet_size = 8192
 var client_ids = Create_Counter()
 var room_ids = Create_Counter()
 
+var E_NO_ROOM = Construct_Message([]*MessageComponent {
+  Message_Component("ERROR_CODE:", "1"),
+  Message_Component("ERROR_DESCRIPTION:", "Error: Cannot connect to non-existant room"),
+})
+
 var connected_clients = make(map[int]*Connection)
 var connected_clients_mutex = sync.Mutex{}
 
@@ -83,12 +88,15 @@ func leave_message(room * Room, client string) * Message {
 }
 
 func (this * Room) Leave(conn * Connection, name string) {
+  fmt.Println("Exists: ", this, conn != nil)
   delete(this.clients, conn.id)
   this.Send(leave_message(this, name))
 }
 
 func (this * Room) Send(message * Message) {
+  fmt.Println("Hello World", this)
   for _, client := range this.clients {
+    fmt.Println("Here")
     client.Send(message)
   }
 }
@@ -112,14 +120,12 @@ type Message struct {
   components []*MessageComponent
   mapped_components map[string]string
   m_cache []byte
+  m_type string
 }
 
 func (this * Message) Type() string {
-  return this.components[0].Key
-}
-
-func (this * Message) Value() string {
-  return this.components[0].Value
+  // return this.components[0].Key
+  return this.m_type
 }
 
 func (this * Message) Serialize() []byte {
@@ -171,9 +177,9 @@ func parse_component_data(message []byte, terminator string) string {
       break
     }
   }
-
-  fmt.Println("MSG:", string(message[:i]), term_bytes)
-
+  if i == len(message) {
+    return string(message)
+  }
   return string(message[:i])
 }
 
@@ -190,7 +196,7 @@ func parse_component(message []byte) * MessageComponent {
   if len_type > len(message) {
     return nil
   }
-
+  fmt.Printf("%s: ", m_type)
   component := parse_component_data(message[len_type:], term)
 
   return &MessageComponent{
@@ -199,46 +205,140 @@ func parse_component(message []byte) * MessageComponent {
   }
 }
 
-func Parse_Message(message []byte) * Message {
-  components := make([]*MessageComponent, 0)
+func Parse_Messages(message []byte) []*Message {
+  messages := make([]*Message, 0)
 
-  first := parse_component(message)
-  if first == nil {
-    return nil
-  }
-  components = append(components, first)
-
-  if first.len() < len(message) {
-    message = message[first.len():]
-  } else {
-    message = make([]byte, 0)
-  }
-
-  for len(message) > 0 {
-    component := parse_component(message)
-
-    if component != nil {
-      components = append(components, component)
-      if component.len() >= len(message) {
+  read := 0
+  l := len(message)
+  for read != l {
+    m_type := get_message_type(message)
+    read += len(m_type) + 1 // +1 for spacing
+    m_data := make(map[string]string)
+    fmt.Printf("Type: %s ", m_type)
+    switch m_type {
+      case "HELO":
+        ident := parse_component_data(message[read:], "\n")
+        fmt.Println("MSG:", ident)
+        m_data["HELO"] = ident
+        read += len(ident) + 1
         break
-      }
-      message = message[component.len():]
-    } else {
-      break
+      case "JOIN_CHATROOM:":
+        room := parse_component_data(message[read:], "\n")
+        fmt.Println("MSG:", room)
+        read += len(room) + 1 + len("CLIENT_IP: ")
+        ip := parse_component_data(message[read:], "\n")
+        read += len(ip) + 1 + len("PORT: ")
+        port := parse_component_data(message[read:], "\n")
+        read += len(port) + 1 + len("CLIENT_NAME: ")
+        c_name := parse_component_data(message[read:], "\n")
+        read += len(c_name) + 1
+        m_data["JOIN_CHATROOM:"] = room
+        m_data["CLIENT_NAME:"] = c_name
+        m_data["PORT:"] = port
+        m_data["CLIENT_IP:"] = ip
+        break
+      case "LEAVE_CHATROOM:":
+        room := parse_component_data(message[read:], "\n")
+        fmt.Println("MSG:", room)
+        read += len(room) + 1 + len("JOIN_ID: ")
+        id := parse_component_data(message[read:], "\n")
+        fmt.Println("Read ID", read, l)
+        read += len(id) + 1 + len("CLIENT_NAME: ")
+        c_name := parse_component_data(message[read:], "\n")
+        read += len(c_name) + 1
+        m_data["LEAVE_CHATROOM:"] = room
+        m_data["JOIN_ID:"] = id
+        m_data["CLIENT_NAME:"] = c_name
+        break
+      case "DISCONNECT:":
+        disco := parse_component_data(message[read:], "\n")
+        fmt.Println("MSG:", disco)
+        read += len(disco) + 1 + len("PORT: ")
+        port := parse_component_data(message[read:], "\n")
+        read += len(port) + 1 + len("CLIENT_NAME: ")
+        c_name := parse_component_data(message[read:], "\n")
+        read += len(c_name) + 1
+        m_data["DISCONNECT:"] = disco
+        m_data["PORT:"] = port
+        m_data["CLIENT_NAME:"] = c_name
+        break
+      case "CHAT:":
+        room := parse_component_data(message[read:], "\n")
+        fmt.Println("MSG:", room)
+        read += len(room) + 1 + len("JOIN_ID: ")
+        id := parse_component_data(message[read:], "\n")
+        read += len(id) + 1 + len("CLIENT_NAME: ")
+        c_name := parse_component_data(message[read:], "\n")
+        read += len(c_name) + 1 + len("MESSAGE: ")
+        m := parse_component_data(message[read:], "\n\n")
+        read += len(m) + 2
+
+        m_data["CHAT:"] = room
+        m_data["JOIN_ID:"] = id
+        m_data["CLIENT_NAME:"] = c_name
+        m_data["MESSAGE:"] = m
+        break
     }
+    m := &Message{
+      nil, m_data, nil, m_type,
+    }
+    messages = append(messages, m)
   }
+  return messages
 
-  mapped_components := make(map[string]string)
 
-  for _, component := range components {
-    mapped_components[component.Key] = component.Value
-  }
 
-  return &Message{
-    components: components,
-    mapped_components: mapped_components,
-    m_cache: message,
-  }
+
+
+
+
+
+
+
+
+
+
+
+
+  // components := make([]*MessageComponent, 0)
+
+  // first := parse_component(message)
+  // if first == nil {
+  //   return nil
+  // }
+  // components = append(components, first)
+
+  // if first.len() < len(message) {
+  //   message = message[first.len():]
+  // } else {
+  //   message = make([]byte, 0)
+  // }
+
+  // for len(message) > 0 {
+  //   component := parse_component(message)
+
+  //   if component != nil {
+  //     components = append(components, component)
+  //     if component.len() >= len(message) {
+  //       break
+  //     }
+  //     message = message[component.len():]
+  //   } else {
+  //     break
+  //   }
+  // }
+
+  // mapped_components := make(map[string]string)
+
+  // for _, component := range components {
+  //   mapped_components[component.Key] = component.Value
+  // }
+
+  // return &Message{
+  //   components: components,
+  //   mapped_components: mapped_components,
+  //   m_cache: message,
+  // }
 }
 
 type Connection struct {
@@ -286,16 +386,16 @@ func (this * Connection) Close() {
   connected_clients_mutex.Unlock()
 }
 
-func (this * Connection) Receive() * Message {
+func (this * Connection) Receive() []*Message {
   buf := make([]byte, packet_size)
   read, err := this.conn.Read(buf)
 
   if err != nil {
-    this.conn.Close()
+    this.Close()
     handle_conn_err(err)
     return nil
   } else {
-    return Parse_Message(buf[:read])
+    return Parse_Messages(buf[:read])
   }
 }
 
@@ -338,14 +438,21 @@ func chat_message(conn * Connection, message * Message) {
   })
 
   room := conn.rooms[room_id]
-  room.Send(msg)
+  if room != nil {
+    room.Send(msg)
+  } else {
+    conn.Send(E_NO_ROOM)
+  }
 }
 
 func leave_chatroom(conn * Connection, message * Message) * Message {
+  fmt.Println("Leaving", message)
   mapped := message.mapped_components
   room_id, _ := strconv.Atoi(mapped["LEAVE_CHATROOM:"])
-  name := mapped["CLIENT_NAME:"]
 
+  fmt.Println(mapped["LEAVE_CHATROOM"], room_id)
+
+  name := mapped["CLIENT_NAME:"]
   conn.rooms[room_id].Leave(conn, name)
   delete(conn.rooms, room_id)
 
@@ -393,21 +500,27 @@ func handle_message(conn * Connection, message * Message) {
 
 func handle_conn(conn * Connection) {
   for conn.connected {
-    message := conn.Receive()
-    if conn.connected && message != nil {
-      handle_message(conn, message)
+    messages := conn.Receive()
+    if conn.connected && messages != nil {
+      for _, message := range messages {
+        handle_message(conn, message)
+      }
     }
   }
 }
 
-func on_connect(c net.Conn) {
-  conn := &Connection{
+func create_connection(c net.Conn) * Connection {
+  return &Connection{
     client_ids.Next(),
     "",
     c,
     true,
     make(map[int]*Room),
   }
+}
+
+func on_connect(c net.Conn) {
+  conn := create_connection(c)
   connected_clients_mutex.Lock()
   connected_clients[conn.id] = conn
   connected_clients_mutex.Unlock()
