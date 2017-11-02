@@ -29,7 +29,6 @@ var E_NO_FUNC = Construct_Message([]*MessageComponent {
 var connected_clients = make(map[int]*Connection)
 var connected_clients_mutex = sync.Mutex{}
 
-
 var rooms = make(map[int]*Room)
 var rooms_mapped = make(map[string]*Room)
 
@@ -553,7 +552,7 @@ func on_connect(c net.Conn) {
 }
 
 func main() {
-  port := ":" + os.Args[1]
+  port := ":" + os.Getenv("PORT")
 
   ln, err := net.Listen("tcp", port)
 
