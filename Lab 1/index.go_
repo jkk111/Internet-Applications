@@ -8,8 +8,26 @@ import (
   "sync"
   "time"
   "strconv"
-  "strings"
 )
+
+type MessageReader struct {
+  msg []byte
+  index int
+}
+
+func Create_Message_Reader(msg []byte) * MessageReader {
+  return &MessageReader{
+    msg, 0
+  }
+}
+
+func (this * MessageReader) Next() (bool, string) {
+  message := Parse_Message(this.msg[:this.index])
+
+
+
+  return (false, message)
+}
 
 const packet_size = 8192
 
@@ -19,11 +37,6 @@ var room_ids = Create_Counter()
 var E_NO_ROOM = Construct_Message([]*MessageComponent {
   Message_Component("ERROR_CODE:", "1"),
   Message_Component("ERROR_DESCRIPTION:", "Error: Cannot connect to non-existant room"),
-})
-
-var E_NO_FUNC = Construct_Message([]*MessageComponent {
-  Message_Component("ERROR_CODE:", "2"),
-  Message_Component("ERROR_DESCRIPTION:", "Error: Invalid Method"),
 })
 
 var connected_clients = make(map[int]*Connection)
@@ -94,7 +107,6 @@ func leave_message(room * Room, client string) * Message {
 }
 
 func (this * Room) Leave(conn * Connection, name string) {
-  fmt.Println("Exists: ", this, conn != nil)
   delete(this.clients, conn.id)
   this.Send(leave_message(this, name))
 }
@@ -126,12 +138,14 @@ type Message struct {
   components []*MessageComponent
   mapped_components map[string]string
   m_cache []byte
-  m_type string
 }
 
 func (this * Message) Type() string {
-  // return this.components[0].Key
-  return this.m_type
+  return this.components[0].Key
+}
+
+func (this * Message) Value() string {
+  return this.components[0].Value
 }
 
 func (this * Message) Serialize() []byte {
@@ -166,7 +180,7 @@ func get_message_type(message []byte) string {
   // bytes so not too bad!
 
   for i := 0; i < len(message); i++ {
-    if message[i] == ' ' || message[i] == '\n' || message[i] == ':' {
+    if message[i] == ' ' || message[i] == '\n' {
       return string(message[:i])
     }
   }
@@ -183,9 +197,9 @@ func parse_component_data(message []byte, terminator string) string {
       break
     }
   }
-  if i == len(message) {
-    return string(message)
-  }
+
+  fmt.Println("MSG:", string(message[:i]), term_bytes)
+
   return string(message[:i])
 }
 
@@ -202,7 +216,7 @@ func parse_component(message []byte) * MessageComponent {
   if len_type > len(message) {
     return nil
   }
-  fmt.Printf("Parsed) %s: ", m_type)
+  fmt.Printf("%s: ", m_type)
   component := parse_component_data(message[len_type:], term)
 
   return &MessageComponent{
@@ -211,111 +225,46 @@ func parse_component(message []byte) * MessageComponent {
   }
 }
 
-func seek(message []byte, start int, c byte) int {
-  i := start
-  for i < len(message) && message[i] == c {
-    i++
+func Parse_Message(message []byte) * Message {
+  components := make([]*MessageComponent, 0)
+
+  first := parse_component(message)
+  if first == nil {
+    return nil
   }
-  return i
-}
+  components = append(components, first)
 
-func Parse_Messages(conn * Connection, message []byte) []*Message {
-  messages := make([]*Message, 0)
-
-  read := 0
-  l := len(message)
-  last := 0
-  for read < l {
-    m_type := get_message_type(message[read:])
-    read += len(m_type) + 1
-    read = seek(message, read, ' ')
-    m_data := make(map[string]string)
-    fmt.Printf("Type: %s [%d]", m_type, read)
-    switch m_type {
-      case "HELO":
-        ident := parse_component_data(message[read:], "\n")
-        m_data["HELO"] = ident
-        read += len(ident) + 1
-        break
-      case "JOIN_CHATROOM":
-        room := parse_component_data(message[read:], "\n")
-        fmt.Println("MSG:", room)
-        read += len(room) + 1 + len("CLIENT_IP:")
-        read = seek(message, read, ' ')
-        ip := parse_component_data(message[read:], "\n")
-        read += len(ip) + 1 + len("PORT:")
-        read = seek(message, read, ' ')
-        port := parse_component_data(message[read:], "\n")
-        read += len(port) + 1 + len("CLIENT_NAME:")
-        read = seek(message, read, ' ')
-        c_name := parse_component_data(message[read:], "\n")
-        read += len(c_name) + 1
-        m_data["JOIN_CHATROOM:"] = room
-        m_data["CLIENT_NAME:"] = c_name
-        m_data["PORT:"] = port
-        m_data["CLIENT_IP:"] = ip
-        break
-      case "LEAVE_CHATROOM":
-        room := parse_component_data(message[read:], "\n")
-        read += len(room) + 1 + len("JOIN_ID:")
-        read = seek(message, read, ' ')
-        id := parse_component_data(message[read:], "\n")
-        read += len(id) + 1 + len("CLIENT_NAME:")
-        read = seek(message, read, ' ')
-        c_name := parse_component_data(message[read:], "\n")
-        read += len(c_name) + 1
-        m_data["LEAVE_CHATROOM:"] = room
-        fmt.Println(len(id))
-        m_data["JOIN_ID:"] = id
-        m_data["CLIENT_NAME:"] = c_name
-        break
-      case "DISCONNECT":
-        disco := parse_component_data(message[read:], "\n")
-        fmt.Println("MSG:", disco)
-        read += len(disco) + 1 + len("PORT:")
-        read = seek(message, read, ' ')
-        port := parse_component_data(message[read:], "\n")
-        read += len(port) + 1 + len("CLIENT_NAME:")
-        read = seek(message, read, ' ')
-        c_name := parse_component_data(message[read:], "\n")
-        read += len(c_name) + 1
-        m_data["DISCONNECT:"] = disco
-        m_data["PORT:"] = port
-        m_data["CLIENT_NAME:"] = c_name
-        break
-      case "CHAT":
-        room := parse_component_data(message[read:], "\n")
-        fmt.Println("ROOM:", room)
-        read += len(room) + 1 + len("JOIN_ID:")
-        read = seek(message, read, ' ')
-        id := parse_component_data(message[read:], "\n")
-        read += len(id) + 1 + len("CLIENT_NAME:")
-        read = seek(message, read, ' ')
-        c_name := parse_component_data(message[read:], "\n")
-        read += len(c_name) + 1 + len("MESSAGE:")
-        read = seek(message, read, ' ')
-        m := parse_component_data(message[read:], "\n\n")
-        fmt.Println("MSG:", m)
-        read += len(m) + 2
-        m_data["CHAT:"] = room
-        m_data["JOIN_ID:"] = id
-        m_data["CLIENT_NAME:"] = c_name
-        m_data["MESSAGE:"] = m
-        break
-      default:
-        break
-    }
-    m := &Message{
-      nil, m_data, message[last:read], m_type,
-    }
-
-    last = read
-    messages = append(messages, m)
+  if first.len() < len(message) {
+    message = message[first.len():]
+  } else {
+    message = make([]byte, 0)
   }
 
-  fmt.Printf("Parsed %d messages\n", len(messages))
+  for len(message) > 0 {
+    component := parse_component(message)
 
-  return messages
+    if component != nil {
+      components = append(components, component)
+      if component.len() >= len(message) {
+        break
+      }
+      message = message[component.len():]
+    } else {
+      break
+    }
+  }
+
+  mapped_components := make(map[string]string)
+
+  for _, component := range components {
+    mapped_components[component.Key] = component.Value
+  }
+
+  return &Message{
+    components: components,
+    mapped_components: mapped_components,
+    m_cache: message,
+  }
 }
 
 type Connection struct {
@@ -323,7 +272,6 @@ type Connection struct {
   name string // Last known name for client
   conn net.Conn
   connected bool
-  log * os.File
   rooms map[int]*Room
 }
 
@@ -349,16 +297,7 @@ func Message_Component(key, value string) *MessageComponent {
 }
 
 func (this * Connection) Send(message * Message) {
-  fmt.Println("SENDING", string(message.Serialize()))
-  l, err := this.conn.Write(message.Serialize())
-
-  fmt.Printf("Wrote %d bytes to socket\n", l)
-
-  if err != nil {
-    panic(err)
-  } else {
-    fmt.Println("Wrote Successfully")
-  }
+  this.conn.Write(message.Serialize())
 }
 
 func (this * Connection) Close() {
@@ -373,7 +312,7 @@ func (this * Connection) Close() {
   connected_clients_mutex.Unlock()
 }
 
-func (this * Connection) Receive() []*Message {
+func (this * Connection) Receive() * Message {
   buf := make([]byte, packet_size)
   read, err := this.conn.Read(buf)
 
@@ -382,22 +321,11 @@ func (this * Connection) Receive() []*Message {
     handle_conn_err(err)
     return nil
   } else {
-    this.log.Write(buf[:read])
-    return Parse_Messages(this, buf[:read])
+    return Parse_Message(buf[:read])
   }
 }
 
-func client_hello(conn * Connection, message * Message) * Message {
-
-  addr := conn.conn.LocalAddr().String()
-
-  parts := strings.Split(addr, ":")
-
-  ip := parts[0]
-  port := parts[1]
-
-  _ = ip
-  _ = port
+func client_hello(message * Message) * Message {
   return Construct_Message([]*MessageComponent{
     Message_Component("HELO", message.mapped_components["HELO"]),
     Message_Component("IP:", "0"),
@@ -416,22 +344,12 @@ func join_chatroom(conn * Connection, message * Message) * Message {
   room_id := fmt.Sprintf("%d", room.id)
   conn_id := fmt.Sprintf("%d", conn.id)
 
-  addr := conn.conn.LocalAddr().String()
-
-  parts := strings.Split(addr, ":")
-
-  ip := parts[0]
-  port := parts[1]
-
-  _ = ip
-  _ = port
-
   return Construct_Message([]*MessageComponent {
-    Message_Component("JOINED_CHATROOM:", room_name),
-    Message_Component("SERVER_IP:", "0"),
-    Message_Component("PORT:", "0"),
-    Message_Component("ROOM_REF:", room_id),
-    Message_Component("JOIN_ID:", conn_id),
+    Message_Component("JOINED_CHATROOM", room_name),
+    Message_Component("SERVER_IP", "0"),
+    Message_Component("PORT", "0"),
+    Message_Component("ROOM_REF", room_id),
+    Message_Component("JOIN_ID", conn_id),
   })
 }
 
@@ -440,9 +358,9 @@ func chat_message(conn * Connection, message * Message) {
   room_id, _ := strconv.Atoi(mapped["CHAT:"])
 
   msg := Construct_Message([]*MessageComponent {
-    Message_Component("CHAT:", mapped["CHAT"]),
-    Message_Component("CLIENT_NAME:", mapped["CLIENT_NAME"]),
-    Message_Component("MESSAGE:", mapped["MESSAGE"]),
+    Message_Component("CHAT:", mapped["CHAT:"]),
+    Message_Component("CLIENT_NAME:", mapped["CLIENT_NAME:"]),
+    Message_Component("MESSAGE:", mapped["MESSAGE:"]),
   })
 
   room := conn.rooms[room_id]
@@ -454,13 +372,10 @@ func chat_message(conn * Connection, message * Message) {
 }
 
 func leave_chatroom(conn * Connection, message * Message) * Message {
-  fmt.Println("Leaving", message)
   mapped := message.mapped_components
   room_id, _ := strconv.Atoi(mapped["LEAVE_CHATROOM:"])
-
-  fmt.Println(mapped["LEAVE_CHATROOM"], room_id)
-
   name := mapped["CLIENT_NAME:"]
+
   conn.rooms[room_id].Leave(conn, name)
   delete(conn.rooms, room_id)
 
@@ -471,19 +386,18 @@ func leave_chatroom(conn * Connection, message * Message) * Message {
 }
 
 func handle_message(conn * Connection, message * Message) {
-  fmt.Printf("Handling: %s\n", message.Type())
   if message.mapped_components["CLIENT_NAME:"] != "" {
     conn.name = message.mapped_components["CLIENT_NAME:"]
   }
 
   switch message.Type() {
     case "HELO":
-      conn.Send(client_hello(conn, message))
+      conn.Send(client_hello(message))
       break
-    case "JOIN_CHATROOM":
+    case "JOIN_CHATROOM:":
       conn.Send(join_chatroom(conn, message))
       break
-    case "CHAT":
+    case "CHAT:":
       chat_message(conn, message)
       break
     case "KILL_SERVICE":
@@ -498,11 +412,10 @@ func handle_message(conn * Connection, message * Message) {
 
       os.Exit(0)
       break
-    case "DISCONNECT":
-      conn.log.Close()
+    case "DISCONNECT:":
       conn.Close()
       break
-    case "LEAVE_CHATROOM":
+    case "LEAVE_CHATROOM:":
       conn.Send(leave_chatroom(conn, message))
       break
   }
@@ -510,25 +423,19 @@ func handle_message(conn * Connection, message * Message) {
 
 func handle_conn(conn * Connection) {
   for conn.connected {
-    messages := conn.Receive()
-    if conn.connected && messages != nil {
-      for _, message := range messages {
-        fmt.Println("Received message", string(message.Serialize()))
-        handle_message(conn, message)
-      }
+    message := conn.Receive()
+    if conn.connected && message != nil {
+      handle_message(conn, message)
     }
   }
 }
 
 func create_connection(c net.Conn) * Connection {
-  file_name := fmt.Sprintf("w_stream %d", time.Now().UnixNano())
-  f, _ := os.Create(file_name)
   return &Connection{
     client_ids.Next(),
     "",
     c,
     true,
-    f,
     make(map[int]*Room),
   }
 }
@@ -542,7 +449,7 @@ func on_connect(c net.Conn) {
 }
 
 func main() {
-  port := ":" + os.Getenv("PORT")
+  port := ":" + os.Args[1]
 
   ln, err := net.Listen("tcp", port)
 

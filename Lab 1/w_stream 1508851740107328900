@@ -1,0 +1,11 @@
+HELO test
+memes: {}
+JOIN_CHATROOM:test1
+CLIENT_IP:0
+PORT:0
+CLIENT_NAME:hay
+CHAT: 1
+JOIN_ID: 1
+CLIENT_NAME: creamymemes
+MESSAGE: Cummed Pants
+

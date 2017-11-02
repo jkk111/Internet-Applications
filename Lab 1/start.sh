@@ -1,0 +1,1 @@
+docker run -it -p $1:$1 -e PORT=$1 --rm --name "lab-1" "lab-1"

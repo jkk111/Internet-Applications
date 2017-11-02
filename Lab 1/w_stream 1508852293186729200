@@ -1,0 +1,6 @@
+HELO test
+memes: {}
+JOIN_CHATROOM:room1
+CLIENT_IP:0
+PORT:0
+CLIENT_NAME:client1

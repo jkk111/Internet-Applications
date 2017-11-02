@@ -24,7 +24,8 @@ I'll tell you how I became the prince of a town called Bel-Air
 
 `LEAVE_CHATROOM: {ROOM_REF}
 JOIN_ID: {JOIN_ID}
-CLIENT_NAME: I AM A BOT`,
+CLIENT_NAME: I AM A BOT
+`,
 
 `AWAIT`,
 
