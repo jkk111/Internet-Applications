@@ -35,17 +35,22 @@ var rooms_mapped = make(map[string]*Room)
 
 func Get_Room_By_Name(name string) * Room {
   if rooms_mapped[name] == nil {
-    rooms_mapped[name] = &Room{
-      room_ids.Next(),
+    id := room_ids.Next()
+    room := &Room{
+      id,
       name,
       make(map[int]*Connection),
     }
+
+    rooms[id] = room
+    rooms_mapped[name] = room
   }
 
   return rooms_mapped[name]
 }
 
 func Get_Room_By_Id(id int) * Room {
+  fmt.Println(id, rooms)
   return rooms[id]
 }
 
@@ -84,7 +89,7 @@ func (this * Room) Join(conn * Connection) {
 }
 
 func leave_message(room * Room, client string) * Message {
-  message := fmt.Sprintf("%s has left this chatroom.\n\n", client)
+  message := fmt.Sprintf("%s has left this chatroom.", client)
 
   return Construct_Message([]*MessageComponent {
     Message_Component("CHAT:", fmt.Sprintf("%d", room.id)),
@@ -93,11 +98,13 @@ func leave_message(room * Room, client string) * Message {
   })
 }
 
-func (this * Room) Leave(conn * Connection, name string) {
+func (this * Room) Leave(conn * Connection) {
   fmt.Println("Exists: ", this, conn != nil)
+  this.Send(leave_message(this, conn.name))
   delete(this.clients, conn.id)
-  this.Send(leave_message(this, name))
 }
+
+
 
 func (this * Room) Send(message * Message) {
   fmt.Println("Hello World", this)
@@ -350,24 +357,18 @@ func Message_Component(key, value string) *MessageComponent {
 
 func (this * Connection) Send(message * Message) {
   fmt.Println("SENDING", string(message.Serialize()))
-  l, err := this.conn.Write(message.Serialize())
+  l, _ := this.conn.Write(message.Serialize())
 
   fmt.Printf("Wrote %d bytes to socket\n", l)
-
-  if err != nil {
-    panic(err)
-  } else {
-    fmt.Println("Wrote Successfully")
-  }
 }
 
 func (this * Connection) Close() {
   fmt.Println("Closing connection with", this.id)
   for _, room := range this.rooms {
-    room.Leave(this, this.name)
+    room.Leave(this)
   }
-  this.connected = false
   this.conn.Close()
+  this.connected = false
   connected_clients_mutex.Lock()
   delete(connected_clients, this.id)
   connected_clients_mutex.Unlock()
@@ -395,13 +396,10 @@ func client_hello(conn * Connection, message * Message) * Message {
 
   ip := parts[0]
   port := parts[1]
-
-  _ = ip
-  _ = port
   return Construct_Message([]*MessageComponent{
     Message_Component("HELO", message.mapped_components["HELO"]),
-    Message_Component("IP:", "0"),
-    Message_Component("PORT:", "0"),
+    Message_Component("IP:", ip),
+    Message_Component("PORT:", port),
     Message_Component("StudentID:", "14319833"),
   })
 }
@@ -423,13 +421,13 @@ func join_chatroom(conn * Connection, message * Message) * Message {
   ip := parts[0]
   port := parts[1]
 
-  _ = ip
-  _ = port
+  ip = ip
+  port = port
 
   return Construct_Message([]*MessageComponent {
     Message_Component("JOINED_CHATROOM:", room_name),
-    Message_Component("SERVER_IP:", "0"),
-    Message_Component("PORT:", "0"),
+    Message_Component("SERVER_IP:", ip),
+    Message_Component("PORT:", port),
     Message_Component("ROOM_REF:", room_id),
     Message_Component("JOIN_ID:", conn_id),
   })
@@ -440,9 +438,9 @@ func chat_message(conn * Connection, message * Message) {
   room_id, _ := strconv.Atoi(mapped["CHAT:"])
 
   msg := Construct_Message([]*MessageComponent {
-    Message_Component("CHAT:", mapped["CHAT"]),
-    Message_Component("CLIENT_NAME:", mapped["CLIENT_NAME"]),
-    Message_Component("MESSAGE:", mapped["MESSAGE"]),
+    Message_Component("CHAT:", mapped["CHAT:"]),
+    Message_Component("CLIENT_NAME:", mapped["CLIENT_NAME:"]),
+    Message_Component("MESSAGE:", mapped["MESSAGE:"]),
   })
 
   room := conn.rooms[room_id]
@@ -453,21 +451,21 @@ func chat_message(conn * Connection, message * Message) {
   }
 }
 
-func leave_chatroom(conn * Connection, message * Message) * Message {
+func leave_chatroom(conn * Connection, message * Message) {
   fmt.Println("Leaving", message)
   mapped := message.mapped_components
   room_id, _ := strconv.Atoi(mapped["LEAVE_CHATROOM:"])
 
   fmt.Println(mapped["LEAVE_CHATROOM"], room_id)
 
-  name := mapped["CLIENT_NAME:"]
-  conn.rooms[room_id].Leave(conn, name)
-  delete(conn.rooms, room_id)
 
-  return Construct_Message([]*MessageComponent {
-    Message_Component("LEFT_CHATROOM:", mapped["LEAVE_CHATROOM:"]),
-    Message_Component("JOIN_ID:", mapped["JOIN_ID:"]),
-  })
+  conn.Send(Construct_Message([]*MessageComponent {
+    Message_Component("LEFT_CHATROOM:", fmt.Sprintf("%d", room_id)),
+    Message_Component("JOIN_ID:", fmt.Sprintf("%d", conn.id)),
+  }))
+
+  conn.rooms[room_id].Leave(conn)
+  delete(conn.rooms, room_id)
 }
 
 func handle_message(conn * Connection, message * Message) {
@@ -482,6 +480,19 @@ func handle_message(conn * Connection, message * Message) {
       break
     case "JOIN_CHATROOM":
       conn.Send(join_chatroom(conn, message))
+      msg := fmt.Sprintf("%s has joined this chatroom.", conn.name)
+      room := Get_Room_By_Name(message.mapped_components["JOIN_CHATROOM:"])
+
+      fmt.Printf("Client %s joined room %s\n", conn.name, room.name)
+
+      m := Construct_Message([]*MessageComponent {
+        Message_Component("CHAT:", fmt.Sprintf("%d", room.id)),
+        Message_Component("CLIENT_NAME:", conn.name),
+        Message_Component("MESSAGE:", msg),
+      })
+
+      room.Send(m)
+
       break
     case "CHAT":
       chat_message(conn, message)
@@ -503,7 +514,7 @@ func handle_message(conn * Connection, message * Message) {
       conn.Close()
       break
     case "LEAVE_CHATROOM":
-      conn.Send(leave_chatroom(conn, message))
+      leave_chatroom(conn, message)
       break
   }
 }
@@ -542,7 +553,7 @@ func on_connect(c net.Conn) {
 }
 
 func main() {
-  port := ":" + os.Getenv("PORT")
+  port := ":" + os.Args[1]
 
   ln, err := net.Listen("tcp", port)
 
@@ -558,6 +569,7 @@ func main() {
       fmt.Println("Failed to get connection")
       panic(err)
     } else {
+      fmt.Printf("\n\n\nClient Connected\n\n\n")
       go on_connect(conn)
     }
   }
