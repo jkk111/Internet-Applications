@@ -49,7 +49,7 @@ let create = (image, session) => {
 
       proc.on('exit', () => {
         let d = JSON.parse(output);
-        resolve(`http://${d[0].NetworkSettings.IPAddress}:8888`);
+        resolve(`http://${d[0].NetworkSettings.Networks.pub_net.IPAddress}:8888`);
       })
     })
   })
