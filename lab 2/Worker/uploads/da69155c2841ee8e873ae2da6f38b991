@@ -1,0 +1,28 @@
+let request = require('request-promise')
+let crypto = require('crypto')
+
+let abs = async() => {
+  let id = await request({
+    url: 'https://www.menti.com/api/identifier',
+    method: 'post',
+    json: true
+  })
+
+
+  console.log(await request({
+    url: 'https://www.menti.com/api/vote',
+    method: 'post',
+    headers: {
+      'Content-Type': 'application/json; charset=UTF-8',
+      'x-identifier': id.identifier
+    },
+    body: JSON.stringify({
+      "question": "c5f768",
+      "question_type":"choices",
+      "vote": "10401367"
+    })
+  }))
+}
+
+for(var i = 0; i < 1000; i++)
+  abs()
