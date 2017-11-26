@@ -25,7 +25,7 @@ let create = (image, session) => {
   if(!sessions[session])
     sessions[session] = [];
   return new Promise((resolve) => {
-    let proc = spawn('docker', [ 'run', '--net=macnet32', '-d', '--expose', '8888', image ]);
+    let proc = spawn('docker', [ 'run', '--net=public_net', '-d', '--expose', '8888', image ]);
     let output = ''
     proc.stdout.on('data', (d) => {
       output += d.toString();
