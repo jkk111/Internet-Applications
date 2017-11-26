@@ -239,7 +239,7 @@ class GitMaster {
   }
 }
 
-let m = new GitMaster('https://github.com/request/request.git', 'http://localhost:8181', 32)
+let m = new GitMaster('https://github.com/request/request.git', 'http://192.168.0.21:8181', 32)
 m.init().then(async() => {
   let complexity = {};
   let history = await m.commits;
