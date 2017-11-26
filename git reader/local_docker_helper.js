@@ -38,6 +38,7 @@ let create = (image, session) => {
     proc.once('exit', () => {
       out.write(output);
       let code = output.trim();
+      sessions[session].push(code)
       proc = spawn('docker', [ 'inspect', code ]);
       output = '';
 
@@ -68,12 +69,23 @@ app.get('/stop', async(req, res) => {
   console.log(session, sessions, req.query.session)
 
   if(session) {
-    for(var host in session) {
+    for(var host of session) {
       await kill(host);
     }
   }
 
   res.send("OK")
+})
+
+app.get('/close', async(req, res) => {
+  for(var session in sessions) {
+    for(var host of sessions[session]) {
+      await kill(host);
+    }
+  }
+
+  res.send("OK")
+  process.exit();
 })
 
 app.listen(8181)
